@@ -5,7 +5,9 @@
       "Bash(grep:*)",
       "Bash(npx shadcn@latest:*)",
       "Bash(npx next:*)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(bun run:*)",
+      "Bash(bun add:*)"
     ]
   }
 }
