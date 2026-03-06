@@ -1,23 +1,33 @@
-# (experimental) nanobot-gui
+# SuperClaw
 
-Minimal workspace for NanoClaw + Dashboard.
+SuperClaw is a Mutation of NanoClaw `v1.1.3` with opinionated core changes and a built-in dashboard UX for operations and end-user workflows.
 
-## Codebase layout
+## Status
 
-- `nanoclaw/`: core TypeScript/Node service (chat handling, SQLite state, task scheduling, containerized agent runs).
-- `dashboard/`: Next.js UI + API for monitoring/managing NanoClaw.
-- `indexes/`: architecture and indexing docs for quick system understanding.
+Work in progress. Interfaces and behavior can change.
 
-## Prerequisites
+## Fork baseline
 
-- Node.js 20+
-- npm
-- Docker Desktop (or Apple Container on macOS)
-- Optional: Claude Code CLI (for guided NanoClaw setup)
+- Upstream base: NanoClaw `v1.1.3`
+- Runtime model: containerized agent execution + SQLite state
+- UI model: unified dashboard for chat, agents, tasks, and system controls
 
-## Basic installation
+## Opinionated changes
 
-1. Start NanoClaw:
+- Unified dashboard-first workflow for both admin and end-user operations
+- Trigger-gated group processing with strict regex control per registered group
+- Local IPC-driven control plane for tasks, registration, and outbound messages
+- Focus on explicit configuration over hidden defaults
+
+## Workspace layout
+
+- `nanoclaw/` - core service (message intake, DB, scheduler, container runner)
+- `dashboard/` - Next.js UI + API surface
+- `indexes/` - architecture summaries and codebase indexes
+
+## Quick start
+
+1. Start SuperClaw core:
 
 ```bash
 cd nanoclaw
@@ -25,34 +35,48 @@ npm install
 npm run dev
 ```
 
-2. Start Dashboard (new terminal):
+2. Start dashboard in a second terminal:
 
 ```bash
 cd dashboard
 npm install
 ```
 
-Set required dashboard auth token:
+Set environment variables before `npm run dev` in `dashboard/`.
 
-```powershell
-$env:DASHBOARD_ADMIN_TOKEN="change-me"
-```
-
-Optional (only if NanoClaw is not at `../nanoclaw` relative to `dashboard/`):
-
-```powershell
-$env:NANOCLAW_ROOT="C:\\path\\to\\nanoclaw"
-```
-
-Run dashboard:
-
+macOS/Linux (bash/zsh):
 ```bash
+export DASHBOARD_ADMIN_TOKEN="change-me"
+# optional if core is not ../nanoclaw
+export NANOCLAW_ROOT="/absolute/path/to/nanoclaw"
 npm run dev
 ```
 
-3. Open `http://localhost:3000` and sign in using `DASHBOARD_ADMIN_TOKEN`.
+Windows PowerShell:
+```powershell
+$env:DASHBOARD_ADMIN_TOKEN="change-me"
+# optional if core is not ..\nanoclaw
+$env:NANOCLAW_ROOT="C:\\path\\to\\nanoclaw"
+npm run dev
+```
 
-## Notes
+3. Open `http://localhost:3000` and log in with `DASHBOARD_ADMIN_TOKEN`.
 
-- Dashboard reads NanoClaw data from `store/messages.db` under the resolved NanoClaw root.
-- For first-time NanoClaw provisioning/auth/service setup, run `claude` inside `nanoclaw/` and execute `/setup`.
+## Docker image notes
+
+Core uses a local image tag: `nanoclaw-agent:latest`.
+You do not need to manually pull a public "latest" image by default.
+
+Rebuild the local image when container code changes or on a fresh machine:
+
+```bash
+cd nanoclaw
+docker build -t nanoclaw-agent:latest -f container/Dockerfile container
+```
+
+Runtime expectations:
+
+- macOS/Linux: Docker or Apple Container runtime
+- Windows: Docker Desktop (Linux containers mode)
+
+If you run NanoClaw setup flow, image build/test is handled automatically.
