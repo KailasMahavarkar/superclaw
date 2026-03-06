@@ -1,255 +1,172 @@
-# NanoClaw Configuration Surface
+# Configuration Surface
 
-## Environment Variables (.env file)
+## Dashboard Environment Variables
+
+### DASHBOARD_ADMIN_TOKEN
+- **Required**: Yes (dashboard won't authenticate without it)
+- **Where read**: `dashboard/middleware.ts`, `dashboard/src/lib/server/auth.ts`
+- **What it controls**: Admin login token. Cookie `nanoclaw_dashboard_session` validated against this.
+- **Effect of changing**: Immediate (checked per-request). Existing sessions invalidated.
+
+### NANOCLAW_ROOT
+- **Default**: `../nanoclaw` (relative to dashboard working directory)
+- **Where read**: `dashboard/src/lib/server/paths.ts`
+- **What it controls**: Base path to NanoClaw installation. All DB, IPC, group, log paths derived from this.
+- **Effect of changing**: Requires dashboard restart.
+
+### NODE_ENV
+- **Where read**: `dashboard/src/lib/server/auth.ts`
+- **What it controls**: When "production", auth cookies get `secure: true` flag.
+
+---
+
+## NanoClaw Environment Variables (.env file)
 
 ### ASSISTANT_NAME
 - **Default**: `"Andy"`
-- **Where read**: `config.ts` via `readEnvFile(['ASSISTANT_NAME', ...])`. Also falls back to `process.env.ASSISTANT_NAME`.
-- **What it controls**:
-  - Trigger pattern: messages must start with `@{ASSISTANT_NAME}` to activate the bot in non-main groups
-  - Message prefixing: outbound messages are prefixed with `{ASSISTANT_NAME}: ` (unless ASSISTANT_HAS_OWN_NUMBER)
-  - Bot message detection: messages starting with `{ASSISTANT_NAME}:` are classified as bot messages
-  - Bot message backfill: migration marks existing messages matching `{ASSISTANT_NAME}:%` as bot messages
-- **Effect of changing**: Changes trigger word. Requires restart. Old messages with old prefix will still be filtered correctly due to is_bot_message column.
+- **Where read**: `nanoclaw/src/config.ts` via `readEnvFile()`
+- **What it controls**: Trigger pattern (`@{name}`), message prefix (`{name}: `), bot message detection
+- **Effect of changing**: Requires restart
 
 ### ASSISTANT_HAS_OWN_NUMBER
 - **Default**: `false`
-- **Where read**: `config.ts` via `readEnvFile(...)`. Compared as string `=== 'true'`.
-- **What it controls**:
-  - When `true`: bot messages detected by `is_from_me` flag; no prefix added to outbound messages
-  - When `false`: bot messages detected by `{ASSISTANT_NAME}:` prefix; prefix added to all outbound messages
-- **Effect of changing**: Affects how outgoing messages appear. Requires restart.
+- **Where read**: `nanoclaw/src/config.ts` via `readEnvFile()`
+- **What it controls**: When true, bot detected by `is_from_me`; no prefix on outbound. When false, detected by `{name}:` prefix.
+- **Effect of changing**: Requires restart
 
 ### CONTAINER_IMAGE
 - **Default**: `"nanoclaw-agent:latest"`
-- **Where read**: `config.ts` from `process.env.CONTAINER_IMAGE`
-- **What it controls**: Docker image name used when spawning containers
-- **Effect of changing**: Next container spawn uses new image. No restart needed (read per-spawn from process.env? No -- config.ts is read once at import time, so restart required).
+- **Where read**: `nanoclaw/src/config.ts` from `process.env`
+- **What it controls**: Docker image for agent containers
+- **Effect of changing**: Requires restart (read once at import)
 
 ### CONTAINER_TIMEOUT
-- **Default**: `1800000` (30 minutes)
-- **Where read**: `config.ts` from `process.env.CONTAINER_TIMEOUT`
-- **What it controls**: Maximum time a container can run before being killed. Actual timeout is `Math.max(CONTAINER_TIMEOUT, IDLE_TIMEOUT + 30000)`.
-- **Effect of changing**: Requires restart. Affects how long agents can work on complex tasks.
+- **Default**: `1800000` (30 min)
+- **Where read**: `nanoclaw/src/config.ts`
+- **What it controls**: Max container runtime. Actual = `Math.max(CONTAINER_TIMEOUT, IDLE_TIMEOUT + 30000)`
+- **Effect of changing**: Requires restart
 
 ### CONTAINER_MAX_OUTPUT_SIZE
 - **Default**: `10485760` (10 MB)
-- **Where read**: `config.ts` from `process.env.CONTAINER_MAX_OUTPUT_SIZE`
-- **What it controls**: Maximum stdout/stderr accumulation from a container. Truncated after this limit.
-- **Effect of changing**: Requires restart.
+- **What it controls**: Max stdout/stderr from container before truncation
+- **Effect of changing**: Requires restart
 
 ### IDLE_TIMEOUT
-- **Default**: `1800000` (30 minutes)
-- **Where read**: `config.ts` from `process.env.IDLE_TIMEOUT`
-- **What it controls**: How long a container stays alive after its last result output. After expiry, `queue.closeStdin()` writes the `_close` sentinel to trigger graceful shutdown.
-- **Effect of changing**: Requires restart. Lower values free resources faster; higher values allow more follow-up messages without cold starts.
+- **Default**: `1800000` (30 min)
+- **What it controls**: How long container stays alive after last result. After expiry, `_close` sentinel written.
+- **Effect of changing**: Requires restart
 
 ### MAX_CONCURRENT_CONTAINERS
-- **Default**: `5`
-- **Where read**: `config.ts` from `process.env.MAX_CONCURRENT_CONTAINERS`. Clamped to minimum 1.
-- **What it controls**: Maximum number of Docker containers running simultaneously. Additional requests are queued in `GroupQueue.waitingGroups`.
-- **Effect of changing**: Requires restart.
+- **Default**: `5` (min 1)
+- **What it controls**: Concurrent Docker containers. Excess queued in `GroupQueue.waitingGroups`.
+- **Effect of changing**: Requires restart
 
 ### LOG_LEVEL
 - **Default**: `"info"`
-- **Where read**: `logger.ts` from `process.env.LOG_LEVEL`. Also checked in `container-runner.ts` for verbose container logging.
-- **What it controls**: pino log level. Options: "trace", "debug", "info", "warn", "error", "fatal".
-- **Effect of changing**: Requires restart. "debug" or "trace" enables full container input/output in log files.
+- **Where read**: `nanoclaw/src/logger.ts`
+- **What it controls**: Pino log level. "debug"/"trace" enables full container I/O in logs.
+- **Effect of changing**: Requires restart
 
 ### TZ
-- **Default**: System timezone via `Intl.DateTimeFormat().resolvedOptions().timeZone`
-- **Where read**: `config.ts` from `process.env.TZ`
-- **What it controls**: Timezone for cron expression evaluation and scheduled tasks. Passed to containers via `-e TZ={TIMEZONE}`.
-- **Effect of changing**: Requires restart. Affects when cron tasks fire.
+- **Default**: System timezone
+- **What it controls**: Cron evaluation timezone. Passed to containers via `-e TZ=`.
+- **Effect of changing**: Requires restart
 
-### CLAUDE_CODE_OAUTH_TOKEN
-- **Default**: None
-- **Where read**: `container-runner.ts` via `readEnvFile(['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'])` at container spawn time
-- **What it controls**: Authentication for Claude Agent SDK. Passed to container via stdin JSON (never as env var or mount).
-- **Effect of changing**: Takes effect on next container spawn without restart (read from .env each time).
-
-### ANTHROPIC_API_KEY
-- **Default**: None
-- **Where read**: `container-runner.ts` via `readEnvFile(...)` at container spawn time
-- **What it controls**: Alternative authentication for Claude Agent SDK.
-- **Effect of changing**: Takes effect on next container spawn without restart.
+### CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY
+- **Where read**: `nanoclaw/src/container-runner.ts` via `readEnvFile()` at each spawn
+- **What it controls**: Auth for Claude Agent SDK. Passed via stdin JSON.
+- **Effect of changing**: Next container spawn (no restart needed)
 
 ---
 
-## Config Constants in config.ts
+## Hardcoded Constants
 
-### POLL_INTERVAL
-- **Value**: `2000` (2 seconds)
-- **Hardcoded**: Yes
-- **What it controls**: How often `startMessageLoop()` polls SQLite for new messages
-- **Effect of changing**: Trade-off between response latency and CPU usage
+### Polling Intervals
+| Constant | Value | Location | Purpose |
+|----------|-------|----------|---------|
+| POLL_INTERVAL | 2000ms | nanoclaw/src/config.ts | Message loop polling |
+| SCHEDULER_POLL_INTERVAL | 60000ms | nanoclaw/src/config.ts | Task scheduler polling |
+| IPC_POLL_INTERVAL | 1000ms | nanoclaw/src/config.ts | Host IPC watcher |
+| IPC_POLL_MS | 500ms | container/agent-runner/src/index.ts | Agent IPC input polling |
+| GROUP_SYNC_INTERVAL_MS | 86400000ms | nanoclaw/src/channels/whatsapp.ts | WhatsApp metadata sync |
 
-### SCHEDULER_POLL_INTERVAL
-- **Value**: `60000` (60 seconds)
-- **Hardcoded**: Yes
-- **What it controls**: How often `startSchedulerLoop()` checks for due tasks
-- **Effect of changing**: Tasks may fire up to this many ms late
+### Queue / Retry
+| Constant | Value | Location | Purpose |
+|----------|-------|----------|---------|
+| MAX_RETRIES | 5 | nanoclaw/src/group-queue.ts | Max retry for failed processing |
+| BASE_RETRY_MS | 5000ms | nanoclaw/src/group-queue.ts | Backoff base: `5000 * 2^(n-1)` |
+| TASK_CLOSE_DELAY_MS | 10000ms | nanoclaw/src/task-scheduler.ts | Delay before closing task container |
 
-### IPC_POLL_INTERVAL
-- **Value**: `1000` (1 second)
-- **Hardcoded**: Yes
-- **What it controls**: How often `startIpcWatcher()` scans IPC directories for new files
-- **Effect of changing**: Latency for IPC file processing (messages, task operations)
+### Paths
+| Constant | Value | Location |
+|----------|-------|----------|
+| STORE_DIR | `{cwd}/store` | nanoclaw/src/config.ts |
+| GROUPS_DIR | `{cwd}/groups` | nanoclaw/src/config.ts |
+| DATA_DIR | `{cwd}/data` | nanoclaw/src/config.ts |
+| MAIN_GROUP_FOLDER | `"main"` | nanoclaw/src/config.ts |
+| MOUNT_ALLOWLIST_PATH | `~/.config/nanoclaw/mount-allowlist.json` | nanoclaw/src/config.ts |
 
-### IPC_POLL_MS (agent-runner)
-- **Value**: `500` (0.5 seconds)
-- **Hardcoded**: Yes (in container/agent-runner/src/index.ts)
-- **What it controls**: How often the agent runner polls `/workspace/ipc/input/` for follow-up messages and `_close` sentinel
-
-### MAIN_GROUP_FOLDER
-- **Value**: `"main"`
-- **Hardcoded**: Yes
-- **What it controls**: Which group folder gets elevated privileges (read-only project access, can register groups, can schedule for other groups, no trigger required)
-
-### STORE_DIR
-- **Value**: `path.resolve(process.cwd(), 'store')`
-- **What it controls**: Location of SQLite database and WhatsApp auth state
-
-### GROUPS_DIR
-- **Value**: `path.resolve(process.cwd(), 'groups')`
-- **What it controls**: Base directory for group folders
-
-### DATA_DIR
-- **Value**: `path.resolve(process.cwd(), 'data')`
-- **What it controls**: Location of IPC directories and sessions data
-
-### GROUP_SYNC_INTERVAL_MS (whatsapp.ts)
-- **Value**: `86400000` (24 hours)
-- **Hardcoded**: Yes
-- **What it controls**: Minimum interval between WhatsApp group metadata syncs. Cached in chats table via `__group_sync__` entry.
-
-### MAX_RETRIES (group-queue.ts)
-- **Value**: `5`
-- **Hardcoded**: Yes
-- **What it controls**: Maximum retry attempts for failed message processing per group
-
-### BASE_RETRY_MS (group-queue.ts)
-- **Value**: `5000` (5 seconds)
-- **Hardcoded**: Yes
-- **What it controls**: Base delay for exponential backoff. Actual delay: `5000 * 2^(retryCount-1)`
-
-### TASK_CLOSE_DELAY_MS (task-scheduler.ts)
-- **Value**: `10000` (10 seconds)
-- **Hardcoded**: Yes
-- **What it controls**: Delay after task produces a result before closing the container. Allows final MCP calls.
+### Validation
+| Pattern | Value | Location |
+|---------|-------|----------|
+| GROUP_FOLDER_PATTERN | `/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/` | nanoclaw/src/group-folder.ts |
+| RESERVED_FOLDERS | `Set("global")` | nanoclaw/src/group-folder.ts |
 
 ---
 
-## Per-Group Configuration (registered_groups table)
+## Dashboard Polling Intervals (client-side)
 
-### containerConfig
-- **Stored as**: JSON string in `container_config` column
-- **Structure**:
-```typescript
-{
-  additionalMounts?: [{
-    hostPath: string,         // Absolute path or ~ prefix
-    containerPath?: string,   // Defaults to basename(hostPath)
-    readonly?: boolean        // Default: true
-  }],
-  timeout?: number            // Container timeout override in ms
-}
-```
-- **Where read**: `container-runner.ts` in `buildVolumeMounts()` and container timeout calculation
-- **Effect of changing**: Takes effect on next container spawn. Modified via `setRegisteredGroup()` or IPC `register_group`.
+| Data | Interval | Page |
+|------|----------|------|
+| Chat list | 10s | /chat |
+| Messages | 3s | /chat |
+| Tasks (sidebar) | 15s | /chat |
+| Tasks (main) | 3s | /tasks |
+| Agents | 3s | /agents |
+| System health (header) | 10s | all pages |
+| System health + config | 5s | /system |
 
-### requiresTrigger
-- **Stored as**: INTEGER (1 or 0) in `requires_trigger` column
-- **Default**: `1` (true)
-- **What it controls**: Whether messages need `@nanoName` prefix to be processed
-- **Special case**: Main group always processes all messages regardless of this setting
-- **Effect of changing**: Immediate on next message poll cycle
+All client-side polling pauses when document is hidden (visibility API).
 
 ---
 
-## Mount Allowlist (~/.config/nanoclaw/mount-allowlist.json)
+## Config Files
 
-Location: `{HOME}/.config/nanoclaw/mount-allowlist.json`
-
-### Structure
+### Mount Allowlist (`~/.config/nanoclaw/mount-allowlist.json`)
 ```json
 {
-  "allowedRoots": [
-    {
-      "path": "~/projects",
-      "allowReadWrite": true,
-      "description": "Development projects"
-    }
-  ],
-  "blockedPatterns": ["password", "secret", "token"],
+  "allowedRoots": [{ "path": "~/projects", "allowReadWrite": true, "description": "Dev projects" }],
+  "blockedPatterns": ["password", "secret"],
   "nonMainReadOnly": true
 }
 ```
+- If missing or invalid JSON: ALL additional mounts blocked
+- Cached in memory for process lifetime
+- Stored outside project root (tamper-proof)
+- Default blocked patterns (16): .ssh, .gnupg, .gpg, .aws, .azure, .gcloud, .kube, .docker, credentials, .env, .netrc, .npmrc, .pypirc, id_rsa, id_ed25519, private_key, .secret
 
-### Fields
+### Memory Files
+| File | Mounted As | Effect |
+|------|-----------|--------|
+| `groups/global/CLAUDE.md` | `/workspace/global/CLAUDE.md` (ro) | Shared instructions for non-main groups |
+| `groups/{name}/CLAUDE.md` | `/workspace/group/CLAUDE.md` (rw) | Per-group memory, loaded by Claude SDK |
+| `data/sessions/{name}/.claude/settings.json` | `/home/node/.claude/settings.json` | SDK settings (auto-generated if missing) |
 
-#### allowedRoots[].path
-- **What it controls**: Directories under which additional mounts are permitted. Supports `~` expansion.
-
-#### allowedRoots[].allowReadWrite
-- **What it controls**: Whether read-write mounts are allowed under this root. If false, all mounts under this root are forced read-only.
-
-#### blockedPatterns
-- **What it controls**: Additional path components that block mounting. Merged with DEFAULT_BLOCKED_PATTERNS: `.ssh`, `.gnupg`, `.gpg`, `.aws`, `.azure`, `.gcloud`, `.kube`, `.docker`, `credentials`, `.env`, `.netrc`, `.npmrc`, `.pypirc`, `id_rsa`, `id_ed25519`, `private_key`, `.secret`
-
-#### nonMainReadOnly
-- **What it controls**: If true, non-main groups can only have read-only additional mounts regardless of per-root settings.
-
-### Behavior
-- File is cached in memory after first load (process lifetime)
-- If file doesn't exist: ALL additional mounts are blocked
-- If file is invalid JSON: ALL additional mounts are blocked
-- Stored outside project root (not mounted into containers) for tamper-proof security
+### Service Configuration
+- **macOS**: `~/Library/LaunchAgents/com.nanoclaw.plist` (launchctl)
+- **Linux**: systemd user service (referenced but unit file not in repo)
+- **Logs**: `{nanoclaw}/logs/nanoclaw.log`, `{nanoclaw}/logs/nanoclaw.error.log`
 
 ---
 
-## Memory Files (CLAUDE.md hierarchy)
+## Config Change Propagation
 
-### groups/global/CLAUDE.md
-- **Where read**: Agent runner loads this as `systemPrompt.append` for non-main groups
-- **What it controls**: Shared instructions/personality/rules for all groups
-- **Effect of changing**: Takes effect on next container spawn
-
-### groups/{name}/CLAUDE.md
-- **Where read**: Claude Agent SDK automatically loads from working directory (`/workspace/group/`)
-- **What it controls**: Per-group memory, personality, context
-- **Effect of changing**: Takes effect on next container spawn
-
-### data/sessions/{name}/.claude/settings.json
-- **Where read**: Claude Agent SDK loads from `~/.claude/settings.json` inside container
-- **What it controls**: SDK settings per group. Default content:
-```json
-{
-  "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "0"
-  }
-}
-```
-- **Effect of changing**: Takes effect on next container spawn. Only written if file doesn't exist.
-
----
-
-## Service Configuration
-
-### macOS: launchd/com.nanoclaw.plist
-- **Install location**: `~/Library/LaunchAgents/com.nanoclaw.plist`
-- **Template variables**: `{{NODE_PATH}}`, `{{PROJECT_ROOT}}`, `{{HOME}}`
-- **Key settings**: `RunAtLoad=true`, `KeepAlive=true`
-- **Logs**: `{{PROJECT_ROOT}}/logs/nanoclaw.log`, `{{PROJECT_ROOT}}/logs/nanoclaw.error.log`
-- **Commands**:
-  - Load: `launchctl load ~/Library/LaunchAgents/com.nanoclaw.plist`
-  - Unload: `launchctl unload ~/Library/LaunchAgents/com.nanoclaw.plist`
-  - Restart: `launchctl kickstart -k gui/$(id -u)/com.nanoclaw`
-
-### Linux: systemd (referenced in docs but unit file not in repo)
-- **Commands**:
-  - Start: `systemctl --user start nanoclaw`
-  - Stop: `systemctl --user stop nanoclaw`
-  - Restart: `systemctl --user restart nanoclaw`
+| What Changed | When It Takes Effect |
+|-------------|---------------------|
+| CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY | Next container spawn |
+| groups/*/CLAUDE.md | Next container spawn |
+| groups/global/CLAUDE.md | Next container spawn |
+| Mount allowlist | Next container spawn (cached in memory) |
+| All other env vars / config.ts constants | Requires NanoClaw process restart |
+| DASHBOARD_ADMIN_TOKEN | Immediate (per-request) |
+| NANOCLAW_ROOT | Requires dashboard restart |

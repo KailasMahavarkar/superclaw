@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(rook tree:*)"
+      "Bash(rook tree:*)",
+      "Bash(grep:*)",
+      "Bash(npx shadcn@latest:*)",
+      "Bash(npx next:*)"
     ]
   }
 }
