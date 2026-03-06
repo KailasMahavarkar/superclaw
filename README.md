@@ -1,33 +1,34 @@
 # SuperClaw
 
-SuperClaw is a Mutation of NanoClaw `v1.1.3` with opinionated core changes and a built-in dashboard UX for operations and end-user workflows.
+A mutation of [NanoClaw](https://github.com/qwibitai/nanoclaw) with opinionated core changes and a built-in dashboard for operations and end-user workflows.
 
-## Status
+NanoClaw gives you an AI assistant that runs agents securely in containers. SuperClaw adds a full web UI on top so you can manage chats, agents, tasks, and system configuration from a browser instead of the command line.
 
-Work in progress. Interfaces and behavior can change.
+## What's Different from NanoClaw
 
-## Fork baseline
+| | NanoClaw | SuperClaw |
+|---|---|---|
+| **Interface** | CLI / chat only | Web dashboard + chat |
+| **Config** | Edit `.env` by hand | Form builder with validation |
+| **Agent management** | Chat commands | Visual registration + editing |
+| **Task scheduling** | Chat commands | Create/pause/cancel from UI |
+| **Chat history** | SQLite queries | Searchable chat viewer |
+| **System monitoring** | Log files | Live health dashboard + log tail |
 
-- Upstream base: NanoClaw `v1.1.3`
-- Runtime model: containerized agent execution + SQLite state
-- UI model: unified dashboard for chat, agents, tasks, and system controls
+SuperClaw is a not a fork it a mutation. The core NanoClaw engine (`nanoclaw/`) runs majorly unchanged currently. The dashboard reads its SQLite database directly and writes IPC files for actions.
 
-## Opinionated changes
+## Workspace Layout
 
-- Unified dashboard-first workflow for both admin and end-user operations
-- Trigger-gated group processing with strict regex control per registered group
-- Local IPC-driven control plane for tasks, registration, and outbound messages
-- Focus on explicit configuration over hidden defaults
+```
+superclaw/
+  nanoclaw/       # Core service (message intake, DB, scheduler, container runner)
+  dashboard/      # Next.js UI + API surface
+  indexes/        # Architecture summaries and codebase indexes
+```
 
-## Workspace layout
+## Quick Start
 
-- `nanoclaw/` - core service (message intake, DB, scheduler, container runner)
-- `dashboard/` - Next.js UI + API surface
-- `indexes/` - architecture summaries and codebase indexes
-
-## Quick start
-
-1. Start SuperClaw core:
+### 1. Start NanoClaw core
 
 ```bash
 cd nanoclaw
@@ -35,48 +36,101 @@ npm install
 npm run dev
 ```
 
-2. Start dashboard in a second terminal:
+If this is a fresh install, run `claude` then `/setup` to authenticate WhatsApp, build the container image, and configure services.
+
+### 2. Start the dashboard
 
 ```bash
 cd dashboard
-npm install
+bun install   # or npm install
 ```
 
-Set environment variables before `npm run dev` in `dashboard/`.
+Set environment variables before starting:
 
-macOS/Linux (bash/zsh):
+**macOS/Linux:**
 ```bash
-export DASHBOARD_ADMIN_TOKEN="change-me"
-# optional if core is not ../nanoclaw
+export DASHBOARD_ADMIN_TOKEN="your-secret-token"
+# Optional: defaults to ../nanoclaw
 export NANOCLAW_ROOT="/absolute/path/to/nanoclaw"
-npm run dev
+bun dev
 ```
 
-Windows PowerShell:
+**Windows PowerShell:**
 ```powershell
-$env:DASHBOARD_ADMIN_TOKEN="change-me"
-# optional if core is not ..\nanoclaw
-$env:NANOCLAW_ROOT="C:\\path\\to\\nanoclaw"
-npm run dev
+$env:DASHBOARD_ADMIN_TOKEN="your-secret-token"
+# Optional: defaults to ..\nanoclaw
+$env:NANOCLAW_ROOT="C:\path\to\nanoclaw"
+bun dev
 ```
 
-3. Open `http://localhost:3000` and log in with `DASHBOARD_ADMIN_TOKEN`.
+### 3. Open the dashboard
 
-## Docker image notes
+Navigate to `http://localhost:3000` and log in with your `DASHBOARD_ADMIN_TOKEN`.
 
-Core uses a local image tag: `nanoclaw-agent:latest`.
-You do not need to manually pull a public "latest" image by default.
+## Dashboard Pages
 
-Rebuild the local image when container code changes or on a fresh machine:
+| Page | Purpose |
+|------|---------|
+| `/chat` | Browse conversations, search messages, send replies |
+| `/agents` | Register/edit/delete group agents with trigger patterns |
+| `/tasks` | Create scheduled tasks (cron/interval/once), pause/resume/cancel |
+| `/system` | Health monitoring, `.env` config editor (form + raw), mount allowlist, logs |
+| `/login` | Token authentication |
+
+## How It Works
+
+The dashboard does **not** run its own bot or connect to WhatsApp. It sits alongside NanoClaw and communicates through two mechanisms:
+
+- **Reads**: Direct SQLite queries against NanoClaw's database (chats, messages, tasks, agents, sessions)
+- **Writes**: Atomic JSON files dropped into NanoClaw's IPC directories (messages, task actions, agent registration)
+
+This means the dashboard is stateless and can be started/stopped independently without affecting the running bot.
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Framework | Next.js 16 (App Router) |
+| UI | React 19, Tailwind CSS 4, shadcn/ui, lucide-react |
+| Forms | React Hook Form + zod |
+| State | Zustand (client), SQLite (server reads) |
+| Auth | Token-based with HTTP-only cookies |
+| Database | better-sqlite3 (read-only against NanoClaw DB) |
+
+## Container Image
+
+NanoClaw uses a local Docker image: `nanoclaw-agent:latest`. Rebuild when container code changes:
 
 ```bash
 cd nanoclaw
 docker build -t nanoclaw-agent:latest -f container/Dockerfile container
 ```
 
-Runtime expectations:
+Supported runtimes:
+- **macOS**: Docker Desktop or Apple Container
+- **Linux**: Docker
+- **Windows**: Docker Desktop (Linux containers mode)
 
-- macOS/Linux: Docker or Apple Container runtime
-- Windows: Docker Desktop (Linux containers mode)
+## Environment Variables
 
-If you run NanoClaw setup flow, image build/test is handled automatically.
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DASHBOARD_ADMIN_TOKEN` | Yes | Token for dashboard login |
+| `NANOCLAW_ROOT` | No | Path to NanoClaw directory (defaults to `../nanoclaw`) |
+| `DASHBOARD_RESTART_COMMAND` | No | Shell command to restart NanoClaw from the dashboard |
+
+NanoClaw's own `.env` (API keys, container settings, etc.) is managed through the dashboard's System page.
+
+## Fork Baseline
+
+- Upstream: [NanoClaw](https://github.com/qwibitai/nanoclaw) `v1.1.3`
+- Runtime model: containerized agent execution + SQLite state
+- UI model: unified dashboard for chat, agents, tasks, and system controls
+
+## Status
+
+Work in progress. Interfaces and behavior can change.
+
+## License
+
+MIT
